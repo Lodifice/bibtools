@@ -1,13 +1,28 @@
+#!/bin/env bash
 while read key
 do
-    matches=$(grep -chozP "(?s)@[^{}]+{$key,[^{}]*(({(?>[^{}]+|(?1))*})*[^{}]*)+}" $@ | awk '{s+=$1} END {print s}')
-    if [ "$matches" = "0" ]
+    readarray -d $'\0' -t matches < <(grep -hozP "(?s)@[^{}]+{$key,[^{}]*(({(?>[^{}]+|(?1))*})*[^{}])+}" $@)
+    if [ "${#matches[@]}" = "0" ]
     then
         (>&2 echo "error: $key not found")
-    elif [ "$matches" = "1" ]
+    elif [ "${#matches[@]}" = "1" ]
     then
-        grep -hozP "(?s)@[^{}]+{$key,[^{}]*(({(?>[^{}]+|(?1))*})*[^{}])+}" $@ | tr '\0' '\n'
+        echo "${matches[@]}"
     else
-        (>&2 echo "error: $key multiple occurences, ignored")
+        mapfile -d $'\0' -t uniq < <(printf "%s\0" "${matches[@]}" | sort -zu)
+        if (( ${#uniq[@]} <= 1 )); then
+            (>&2 echo "error: $key multiple identical occurences, ignored")
+            echo "${uniq[@]}"
+            continue
+        fi
+        (>&2 echo "error: $key multiple occurences, please resolve")
+        select match in "${matches[@]}"
+        do
+            if [ -n "$match" ]
+            then
+                echo "$match"
+                break
+            fi
+        done < /dev/tty
     fi
 done
